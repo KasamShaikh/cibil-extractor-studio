@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+models.json
+.git/
+.github/
+infra/
+deploy/
+*.md
+_smoke_output.xlsx
+.gitignore
+.dockerignore

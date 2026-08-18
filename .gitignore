@@ -1,0 +1,29 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+_smoke_output.xlsx
+
+# Local model config (may contain real endpoints)
+models.json
+
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+*.tfvars
+!*.tfvars.example
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraform.lock.hcl
+
+# Kubeconfig / certs
+kubeconfig
+*.kubeconfig
+*.pem
+
+.DS_Store

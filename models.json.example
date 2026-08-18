@@ -1,0 +1,15 @@
+{
+  "_comment": "LOCAL DEV ONLY. Copy to models.json (git-ignored) and set your endpoint. In containers / production the model is configured from FOUNDRY_* environment variables instead (see .env.example), so models.json is not used there.",
+  "models": [
+    {
+      "key": "gpt-5.4-mini",
+      "label": "gpt-5.4-mini \u00b7 Foundry",
+      "endpoint": "https://<your-openai-account>.openai.azure.com/",
+      "deployment": "gpt-5.4-mini",
+      "api_version": "2025-04-01-preview",
+      "reasoning": true,
+      "region": "South India",
+      "default": true
+    }
+  ]
+}

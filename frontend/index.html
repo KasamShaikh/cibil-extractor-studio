@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CIBIL Extractor Studio</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-app">CIBIL Extractor Studio</span>
+    </div>
+    <nav class="topnav">
+      <button class="topnav-btn active" data-view="app" type="button">Extractor</button>
+      <button class="topnav-btn" data-view="howto" type="button">How it works</button>
+    </nav>
+  </header>
+
+  <div id="app-view">
+  <div class="disclaimer">
+    <strong>Proof of Concept</strong> — runs fully on your machine. Use with the
+    provided <em>synthetic</em> CIBIL test report. No data leaves this device.
+  </div>
+
+  <nav class="stepper" id="stepper" hidden>
+    <div class="step" data-step="upload"><span>1</span> Upload</div>
+    <div class="step" data-step="maker"><span>2</span> Maker Review</div>
+    <div class="step" data-step="checker"><span>3</span> Checker</div>
+    <div class="step" data-step="done"><span>4</span> Download</div>
+  </nav>
+
+  <main>
+    <!-- Upload -->
+    <section id="view-upload" class="view">
+      <div class="card upload-card">
+        <h2>Upload a CIBIL report (PDF)</h2>
+        <p class="muted">Single file. The extractor applies the
+          <strong>Generate Report</strong> (Full Detail) rules and produces the
+          5-sheet Excel workbook after checker approval.</p>
+        <label id="dropzone" class="dropzone">
+          <input type="file" id="file" accept="application/pdf" hidden />
+          <div class="dz-inner">
+            <div class="dz-icon">⬆</div>
+            <div id="dz-text">Drop PDF here or <span class="link">browse</span></div>
+          </div>
+        </label>
+        <p class="hint" id="file-hint">Upload a CIBIL report PDF.</p>
+        <button id="btn-extract" class="btn primary" disabled>Extract</button>
+        <div id="extract-activity" class="activity" hidden></div>
+        <div id="upload-error" class="error" hidden></div>
+      </div>
+    </section>
+
+    <!-- Maker -->
+    <section id="view-maker" class="view" hidden>
+      <div class="metrics" id="maker-metrics"></div>
+      <div class="proc" id="maker-proc"></div>
+      <div id="maker-banner" class="banner" hidden></div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>Customer Details</h2>
+          <span class="role-pill maker">Maker</span>
+        </div>
+        <div id="customer-form" class="grid-form"></div>
+      </div>
+
+      <div class="card">
+        <h2>Reconciliation</h2>
+        <div id="reconciliation" class="recon"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>Account Summary</h2>
+          <span class="muted small">Positive-DPD accounts first, then newest first. Flagged cells are highlighted for review.</span>
+        </div>
+        <div class="table-scroll">
+          <table id="accounts-table" class="grid"></table>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Enquiries</h2>
+        <div id="enquiries" class="two-col"></div>
+      </div>
+
+      <div class="actions">
+        <button id="btn-save" class="btn ghost">Save edits</button>
+        <button id="btn-submit" class="btn primary">Submit to Checker →</button>
+      </div>
+    </section>
+
+    <!-- Checker -->
+    <section id="view-checker" class="view" hidden>
+      <div class="metrics" id="checker-metrics"></div>
+      <div class="proc" id="checker-proc"></div>
+      <div class="card">
+        <div class="card-head">
+          <h2>Checker Review</h2>
+          <span class="role-pill checker">Checker</span>
+        </div>
+        <p class="muted">Verify the extracted data and reconciliation, then
+          approve to generate the Excel — or reject back to the maker.</p>
+        <div id="checker-summary"></div>
+      </div>
+      <div class="card">
+        <h2>Reconciliation</h2>
+        <div id="checker-reconciliation" class="recon"></div>
+      </div>
+      <div class="actions">
+        <input id="reject-reason" class="text-input grow" placeholder="Reason (required to reject)" />
+        <button id="btn-reject" class="btn danger">Reject</button>
+        <button id="btn-approve" class="btn primary">Approve &amp; Generate Excel</button>
+      </div>
+    </section>
+
+    <!-- Done -->
+    <section id="view-done" class="view" hidden>
+      <div class="card done-card">
+        <div class="done-tick">✓</div>
+        <h2>Approved — workbook ready</h2>
+        <p class="muted">The Full Detail Excel workbook has been generated.</p>
+        <button id="btn-download" class="btn primary">Download Excel</button>
+        <button id="btn-restart" class="btn ghost">Process another file</button>
+      </div>
+      <div class="card">
+        <h2>Audit trail</h2>
+        <div id="history" class="timeline"></div>
+      </div>
+    </section>
+  </main>
+  </div><!-- /app-view -->
+
+  <div id="howto-view" hidden>
+    <main class="howto">
+      <div class="card">
+        <h1>How it works</h1>
+        <p class="muted">One CIBIL PDF in, the Full Detail Excel workbook out — with a Maker–Checker
+          gate in between. Every report is processed by <strong>Azure Document Intelligence</strong> and the
+          <strong>Microsoft Foundry</strong> model <strong>gpt-5.4-mini</strong> (the same instructions
+          registered as the <code>cibil-extractor</code> agent), then finished by a rule engine and Excel
+          generator. The step-by-step below traces one report end to end.</p>
+        <div class="callout">
+          <strong>What runs on every report:</strong> the PDF's embedded text is read with pypdfium2 and
+          Azure Document Intelligence provides OCR / layout; the report text plus the extraction instructions
+          go to the Foundry <strong>gpt-5.4-mini</strong> deployment, which returns structured JSON; a rule
+          engine then normalises, summarises and reconciles it; on approval, Excel is generated. Keyless
+          throughout (managed identity + RBAC).
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Step by step — from upload to Excel</h2>
+        <table class="who">
+          <tr><th>Step</th><th>What it does</th><th>Why</th></tr>
+          <tr>
+            <td><strong>1. Upload</strong><br><span class="muted small">Browser → FastAPI</span></td>
+            <td>The maker drops a CIBIL PDF in the browser; it is sent to <code>POST /api/extract</code> as multipart.</td>
+            <td>One entry point; the file is streamed and parsed in memory, never written to disk.</td>
+          </tr>
+          <tr>
+            <td><strong>2. Read text layer</strong><br><span class="muted small">pypdfium2</span></td>
+            <td>FastAPI extracts the PDF's embedded text, one line per row.</td>
+            <td>Born-digital CIBIL PDFs carry an exact text layer, so reading it directly avoids OCR errors; pypdfium2 is permissively licensed (BFSI-safe).</td>
+          </tr>
+          <tr>
+            <td><strong>3. OCR &amp; layout</strong><br><span class="muted small">Azure Document Intelligence</span></td>
+            <td>The bytes also go to DI (prebuilt-layout) for OCR and table structure.</td>
+            <td>Makes <em>scanned</em> / photographed reports work; for the born-digital sample the clean pypdfium2 text is authoritative (DI's OCR mis-reads the ₹ glyph).</td>
+          </tr>
+          <tr>
+            <td><strong>4. Extract</strong><br><span class="muted small">Foundry · gpt-5.4-mini</span></td>
+            <td>The report text plus the extraction instructions go to the Foundry-hosted <code>gpt-5.4-mini</code> deployment (the same instructions saved on the <code>cibil-extractor</code> agent). Returns the customer, all 51 accounts and the enquiries as compact JSON.</td>
+            <td>Only an LLM turns messy, inconsistent report text into the exact schema reliably; a reasoning model handles 51 tradelines in one pass; keyless via managed identity + RBAC.</td>
+          </tr>
+          <tr>
+            <td><strong>5. Business rules</strong><br><span class="muted small">rules.py</span></td>
+            <td>Normalises DPD, sequences accounts (peak-DPD first, then newest), builds ownership / loan-type / purpose summaries, derives NPA / SMA status, and runs 6 reconciliation checks against the printed totals.</td>
+            <td>Math, sorting, totals and reconciliation must be exact and auditable — not left to the model — and cost zero extra tokens.</td>
+          </tr>
+          <tr>
+            <td><strong>6. Maker review</strong><br><span class="muted small">Browser</span></td>
+            <td>The extracted data, reconciliation and flags render for the maker to verify and edit.</td>
+            <td>Human-in-the-loop for a regulated workflow.</td>
+          </tr>
+          <tr>
+            <td><strong>7. Checker approval</strong><br><span class="muted small">Browser</span></td>
+            <td>The checker confirms the reconciliation and approves — or rejects with a reason.</td>
+            <td>Four-eyes control and a full audit trail.</td>
+          </tr>
+          <tr>
+            <td><strong>8. Generate Excel</strong><br><span class="muted small">openpyxl</span></td>
+            <td>On approval, the 5-sheet Full Detail workbook is filled (red DPD / overdue, totals row, DPD summary) to match the client template and streamed back to download.</td>
+            <td>The output must match the exact template; openpyxl gives cell-level control including rich-text red.</td>
+          </tr>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>What each component does</h2>
+        <p class="muted">The current PoC pipeline, component by component — who is responsible for what.</p>
+        <table class="who">
+          <tr><th>Component</th><th>What it does</th><th>Why this component</th></tr>
+          <tr><td>Browser UI <span class="muted small">HTML · CSS · JS</span></td><td>Upload, Maker / Checker review and edit, download.</td><td>Zero-install thin client for the CPA users.</td></tr>
+          <tr><td>FastAPI backend</td><td>Orchestrates the pipeline; holds the in-memory job store.</td><td>Fast async Python API; keeps the PDF in memory (privacy).</td></tr>
+          <tr><td>pypdfium2 <span class="muted small">text layer</span></td><td>Reads the PDF's embedded text, one line per row.</td><td>Exact for born-digital PDFs; permissive licence (BFSI-safe).</td></tr>
+          <tr><td>Azure Document Intelligence <span class="muted small">prebuilt-layout OCR</span></td><td>Prebuilt-layout OCR and table structure.</td><td>Makes scanned / photographed reports work — no text layer needed.</td></tr>
+          <tr><td>Microsoft Foundry <span class="muted small">gpt-5.4-mini · cibil-extractor agent</span></td><td>Applies the extraction instructions to the report text → structured JSON (customer, 51 accounts, enquiries).</td><td>Turns messy text into the exact schema; reasoning model = reliable; keyless MI + RBAC; instructions governed in the Foundry portal.</td></tr>
+          <tr><td>rules.py</td><td>DPD normalization, account sequencing, ownership / loan-type / purpose summaries, NPA / SMA status, 6 reconciliation checks.</td><td>Math, sorting and reconciliation must be exact and auditable — not model-guessed; zero tokens.</td></tr>
+          <tr><td>openpyxl</td><td>Fills the 5-sheet Full Detail Excel — red DPD / overdue, totals row, DPD summary.</td><td>Cell-level control incl. rich-text red to match the client template.</td></tr>
+          <tr><td>Maker–Checker</td><td>Human review, edit, and approve / reject gate.</td><td>Four-eyes control and audit trail required in BFSI.</td></tr>
+        </table>
+        <p class="muted small" style="margin-top:10px">On "Foundry": <code>gpt-5.4-mini</code> is deployed inside your Microsoft Foundry project, and the extraction instructions are registered there as the <code>cibil-extractor</code> agent — visible in the portal. The app sends the report text with those instructions to that deployment (keyless), so the model and its instructions live in Foundry.</p>
+      </div>
+
+      <div class="card">
+        <h2>Tokens used per report (one call)</h2>
+        <p class="muted">This is the token usage of a <strong>single report extraction</strong> — the tokens
+          in one call, <em>not</em> a per-minute model rate limit (TPM). Measured on the 6-page, 51-account
+          sample report. <strong>Input</strong> = system prompt + the report text; <strong>output</strong> =
+          the structured JSON the model writes back.</p>
+        <table class="who">
+          <tr><th>Model</th><th>Input tokens</th><th>Output tokens</th><th>Total / report</th></tr>
+          <tr><td>gpt-5.4-mini <span class="muted small">(reasoning)</span></td><td>3,470</td><td>2,393</td><td>5,863</td></tr>
+          <tr><td>gpt-4.1-mini</td><td>3,471</td><td>3,009</td><td>6,480</td></tr>
+          <tr><td>gpt-4o-mini</td><td>3,471</td><td>3,009</td><td>6,480</td></tr>
+        </table>
+        <p class="muted small" style="margin-top:10px">Input (~3,470) is fixed by the report, so it is
+          near-identical across models; output varies with how verbose the model is. Larger reports scale
+          input roughly with the number of account rows. A model's throughput cap (50K–100K tokens/min) is a
+          separate concept — it governs how many of these calls run per minute at scale, not the cost of one
+          report.</p>
+      </div>
+
+      <div class="card">
+        <h2>End-to-end sequence</h2>
+        <div class="mermaid-box" id="seq-box"></div>
+      </div>
+
+      <div class="card">
+        <h2>Local PoC architecture</h2>
+        <div class="mermaid-box" id="arch-local-box"></div>
+        <div class="how-grid">
+          <div>
+            <h3>How the file is picked up</h3>
+            <p class="muted">The browser file input hands the PDF to a multipart
+              <code>POST /api/extract</code>. The bytes are parsed in memory with pypdfium2 straight
+              from the byte stream — the file is <strong>never written to disk</strong>.</p>
+          </div>
+          <div>
+            <h3>Where things are saved</h3>
+            <p class="muted">Nothing is persisted to disk. The extracted JSON and the generated
+              workbook live in an in-process <strong>job store</strong> keyed by a job id, for the
+              session only. Downloads stream those bytes.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Production architecture on Azure</h2>
+        <div class="mermaid-box" id="arch-azure-box"></div>
+        <h3 style="margin-top:14px">Who does what</h3>
+        <table class="who">
+          <tr><th>Component</th><th>Responsibility</th></tr>
+          <tr><td>Microsoft Entra (External ID)</td><td>CPA sign-in; per-tenant Maker / Checker roles.</td></tr>
+          <tr><td>Application Gateway + WAF</td><td>Public HTTPS entry to the portal; TLS termination, WAF, rate-limiting.</td></tr>
+          <tr><td><strong>AKS</strong> — portal pods</td><td>Serve the upload UI and the Maker–Checker review workflow.</td></tr>
+          <tr><td><strong>AKS + KEDA</strong> — worker pods</td><td>Queue-driven competing consumers running the pipeline (pypdfium2 text → DI → Foundry agent → rules.py → openpyxl); autoscale on queue depth, scale-to-zero when idle.</td></tr>
+          <tr><td>Azure Container Registry</td><td>Stores the portal and worker container images.</td></tr>
+          <tr><td>Entra Workload Identity</td><td>Keyless pod → Azure access (DI, Foundry, Blob, SQL, Service Bus) — no secrets or keys.</td></tr>
+          <tr><td>Service Bus</td><td>One message per report; decouples upload from processing; retries + dead-letter; drives KEDA autoscaling.</td></tr>
+          <tr><td>Blob Storage</td><td>Uploaded PDFs (input) and generated Excel (results) in per-CPA paths.</td></tr>
+          <tr><td>Azure Document Intelligence</td><td>OCR / layout for scanned pages or complex tables.</td></tr>
+          <tr><td>Microsoft Foundry — cibil-extractor agent (gpt-5.4-mini)</td><td>Applies the extraction instructions and returns the structured rows.</td></tr>
+          <tr><td>Azure SQL <span class="muted small">(or PostgreSQL)</span></td><td>Report state, Maker–Checker workflow, audit trail, multi-tenant row-level security — <em>metadata only</em>; artifacts live in Blob.</td></tr>
+          <tr><td>Azure Monitor / Log Analytics</td><td>DI + LLM time, tokens, throughput and cost per report; AKS + KEDA container metrics.</td></tr>
+        </table>
+        <p class="muted small" style="margin-top:10px">Does the faster PoC change this? The extraction step got quicker and keyless,
+          but a multi-tenant, maker–checker, audit-logged workflow at 3.17 lakh reports/month still needs a queue (Service Bus), durable
+          artifact storage (Blob), and a transactional store for state + audit + tenant isolation. That store stays <strong>relational</strong>
+          (Azure SQL or PostgreSQL) and holds <em>only</em> workflow metadata — status, who/when, reject reasons, audit — not the PDFs or
+          Excel. Compute is <strong>AKS + KEDA</strong> (with ACR + Workload Identity), replacing Container Apps.</p>
+      </div>
+
+    </main>
+  </div>
+
+  <footer class="foot">
+    CIBIL Extractor Studio &middot; Proof of Concept
+  </footer>
+
+  <script src="/vendor/mermaid.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

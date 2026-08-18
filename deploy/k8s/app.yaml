@@ -1,0 +1,73 @@
+# Templated manifest. The GitHub Actions workflow substitutes ${...} values
+# (from repo variables/secrets) with envsubst before applying.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cibil-extractor
+  namespace: cibil
+  annotations:
+    azure.workload.identity/client-id: "${APP_CLIENT_ID}"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cibil-extractor
+  namespace: cibil
+  labels:
+    app: cibil-extractor
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cibil-extractor
+  template:
+    metadata:
+      labels:
+        app: cibil-extractor
+        azure.workload.identity/use: "true"
+    spec:
+      serviceAccountName: cibil-extractor
+      containers:
+        - name: app
+          image: "${ACR_LOGIN_SERVER}/cibil-extractor:${IMAGE_TAG}"
+          ports:
+            - containerPort: 8000
+          env:
+            - name: DI_ENDPOINT
+              value: "${DI_ENDPOINT}"
+            - name: FOUNDRY_ENDPOINT
+              value: "${FOUNDRY_ENDPOINT}"
+            - name: FOUNDRY_DEPLOYMENT
+              value: "${FOUNDRY_DEPLOYMENT}"
+            - name: FOUNDRY_API_VERSION
+              value: "${FOUNDRY_API_VERSION}"
+            - name: FOUNDRY_REGION
+              value: "${FOUNDRY_REGION}"
+            - name: FOUNDRY_REASONING
+              value: "true"
+          readinessProbe:
+            httpGet:
+              path: /api/capabilities
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cibil-extractor
+  namespace: cibil
+spec:
+  type: LoadBalancer
+  selector:
+    app: cibil-extractor
+  ports:
+    - port: 80
+      targetPort: 8000
