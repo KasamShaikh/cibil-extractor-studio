@@ -53,12 +53,12 @@ async function api(url, opts) {
 // Upload
 // --------------------------------------------------------------------------- //
 const EXTRACT_STAGES = [
-  "Uploading report",
-  "Reading embedded text · pypdfium2",
-  "Document Intelligence reading pages",
-  "Foundry agent extracting · gpt-5.4-mini",
-  "Applying rules & reconciliation",
-  "Preparing maker review",
+  "Uploading CIBIL report",
+  "Reading the report",
+  "Digitising every page",
+  "Extracting accounts, enquiries & summary with AI",
+  "Applying credit rules & reconciling totals",
+  "Preparing maker-checker review",
 ];
 
 function renderActivity(activeIdx, done) {
