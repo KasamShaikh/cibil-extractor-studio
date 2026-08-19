@@ -1,4 +1,3 @@
-# The ONLY value a customer must set is subscription_id (see terraform.tfvars.example).
 variable "subscription_id" {
   type        = string
   description = "Target Azure subscription id."
@@ -7,43 +6,68 @@ variable "subscription_id" {
 variable "location" {
   type        = string
   default     = "centralindia"
-  description = "Region for AKS, ACR, Document Intelligence and Log Analytics."
+  description = "Region for AKS, ACR, Log Analytics (and Document Intelligence when created)."
+}
+
+variable "resource_group_name" {
+  type        = string
+  default     = ""
+  description = "Existing resource group to deploy into. Leave empty to create a new one."
+}
+
+variable "create_ai" {
+  type        = bool
+  default     = true
+  description = "Provision new Document Intelligence + Azure OpenAI + model (true), or reuse existing ones (false)."
+}
+
+variable "existing_di_name" {
+  type        = string
+  default     = ""
+  description = "Existing Document Intelligence account name (used when create_ai = false)."
+}
+
+variable "existing_foundry_name" {
+  type        = string
+  default     = ""
+  description = "Existing Azure OpenAI / Foundry account name (used when create_ai = false)."
+}
+
+variable "foundry_deployment" {
+  type        = string
+  default     = "gpt-5.4-mini"
+  description = "Model deployment name the app calls (created when create_ai = true; must already exist when false)."
 }
 
 variable "foundry_location" {
   type        = string
   default     = "southindia"
-  description = "Region for the Azure OpenAI (Foundry) account. Must offer the chosen model (gpt-5.4-mini is not offered in centralindia)."
+  description = "Region for the Azure OpenAI account when created. Must offer the model (gpt-5.4-mini is not in centralindia)."
 }
 
 variable "name_prefix" {
-  type        = string
-  default     = "cibilx"
-  description = "Short prefix for resource names. A random suffix is appended for global uniqueness."
+  type    = string
+  default = "cibilx"
 }
 
 variable "model_name" {
-  type        = string
-  default     = "gpt-5.4-mini"
-  description = "Azure OpenAI model to deploy."
+  type    = string
+  default = "gpt-5.4-mini"
 }
 
 variable "model_version" {
-  type        = string
-  default     = "2026-03-17"
-  description = "Model version."
+  type    = string
+  default = "2026-03-17"
 }
 
 variable "model_capacity" {
-  type        = number
-  default     = 50
-  description = "Deployment capacity (thousands of TPM) for the GlobalStandard SKU."
+  type    = number
+  default = 50
 }
 
 variable "github_repo" {
-  type        = string
-  default     = "KasamShaikh/cibil-extractor-studio"
-  description = "owner/name of the GitHub repo allowed to deploy via OIDC (federated credential subject)."
+  type    = string
+  default = "KasamShaikh/cibil-extractor-studio"
 }
 
 variable "k8s_namespace" {

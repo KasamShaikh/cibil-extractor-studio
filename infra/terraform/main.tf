@@ -11,31 +11,42 @@ locals {
   base   = "${var.name_prefix}-${local.suffix}"
 }
 
+# Resource group: create a new one, or use an existing one (var.resource_group_name).
 resource "azurerm_resource_group" "rg" {
+  count    = var.resource_group_name == "" ? 1 : 0
   name     = "rg-${local.base}"
   location = var.location
 }
 
+data "azurerm_resource_group" "existing" {
+  count = var.resource_group_name == "" ? 0 : 1
+  name  = var.resource_group_name
+}
+
+locals {
+  rg_name = var.resource_group_name == "" ? azurerm_resource_group.rg[0].name : data.azurerm_resource_group.existing[0].name
+}
+
 resource "azurerm_log_analytics_workspace" "law" {
   name                = "log-${local.base}"
-  location            = azurerm_resource_group.rg.location
-  resource_group_name = azurerm_resource_group.rg.name
+  location            = var.location
+  resource_group_name = local.rg_name
   sku                 = "PerGB2018"
   retention_in_days   = 30
 }
 
 resource "azurerm_container_registry" "acr" {
   name                = "acr${var.name_prefix}${local.suffix}"
-  resource_group_name = azurerm_resource_group.rg.name
-  location            = azurerm_resource_group.rg.location
+  resource_group_name = local.rg_name
+  location            = var.location
   sku                 = "Basic"
   admin_enabled       = false
 }
 
 resource "azurerm_kubernetes_cluster" "aks" {
   name                = "aks-${local.base}"
-  location            = azurerm_resource_group.rg.location
-  resource_group_name = azurerm_resource_group.rg.name
+  location            = var.location
+  resource_group_name = local.rg_name
   dns_prefix          = "aks${var.name_prefix}${local.suffix}"
 
   oidc_issuer_enabled       = true
@@ -53,6 +64,11 @@ resource "azurerm_kubernetes_cluster" "aks" {
 
   oms_agent {
     log_analytics_workspace_id = azurerm_log_analytics_workspace.law.id
+  }
+
+  timeouts {
+    create = "45m"
+    update = "45m"
   }
 }
 
