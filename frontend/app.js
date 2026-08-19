@@ -54,7 +54,7 @@ async function api(url, opts) {
 // --------------------------------------------------------------------------- //
 const EXTRACT_STAGES = [
   "Uploading CIBIL report",
-  "Reading the report",
+  "Reading & recognising the report",
   "Digitising every page",
   "Extracting accounts, enquiries & summary with AI",
   "Applying credit rules & reconciling totals",
@@ -247,8 +247,11 @@ function renderProcessing(container, p) {
 
   const stats = [];
   if (p.mode === "ai") {
+    if (p.report_type)
+      stats.push(["Report type", p.report_type === "commercial" ? "Commercial CIR" : "Individual CIR"]);
     stats.push(["DI read", (p.di_ms ?? 0) + " ms"]);
     stats.push(["LLM", (p.llm_ms ?? 0) + " ms"]);
+    if (p.chunks) stats.push(["Chunks", p.chunks]);
   } else {
     stats.push(["Read time", (p.read_ms ?? 0) + " ms"]);
   }
@@ -556,9 +559,10 @@ const DIAGRAMS = {
   Maker->>UI: Upload CIBIL PDF
   UI->>API: POST /api/extract
   API->>PDF: read text layer
+  API->>API: detect report type · chunk per facility
   API->>DI: analyze (OCR / layout)
   API->>AG: report text + extraction instructions
-  AG-->>API: customer + 51 accounts + enquiries (JSON)
+  AG-->>API: customer + all accounts + enquiries (JSON)
   API->>Rules: apply_rules()
   Rules-->>API: sequencing · summaries · 6/6 reconciliation
   API-->>UI: data + timings + tokens

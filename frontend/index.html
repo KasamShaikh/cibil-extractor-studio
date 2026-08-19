@@ -139,16 +139,18 @@
       <div class="card">
         <h1>How it works</h1>
         <p class="muted">One CIBIL PDF in, the Full Detail Excel workbook out — with a Maker–Checker
-          gate in between. Every report is processed by <strong>Azure Document Intelligence</strong> and the
-          <strong>Microsoft Foundry</strong> model <strong>gpt-5.4-mini</strong> (the same instructions
-          registered as the <code>cibil-extractor</code> agent), then finished by a rule engine and Excel
-          generator. The step-by-step below traces one report end to end.</p>
+          gate in between. The pipeline first recognises whether the upload is an <strong>individual</strong>
+          or a <strong>commercial</strong> CIBIL report and adapts its extraction accordingly, then processes it
+          with <strong>Azure Document Intelligence</strong> and the <strong>Microsoft Foundry</strong> model
+          <strong>gpt-5.4-mini</strong> (the same instructions registered as the <code>cibil-extractor</code>
+          agent), and finishes with a rule engine and Excel generator. The step-by-step below traces one report
+          end to end.</p>
         <div class="callout">
-          <strong>What runs on every report:</strong> the PDF's embedded text is read with pypdfium2 and
-          Azure Document Intelligence provides OCR / layout; the report text plus the extraction instructions
-          go to the Foundry <strong>gpt-5.4-mini</strong> deployment, which returns structured JSON; a rule
-          engine then normalises, summarises and reconciles it; on approval, Excel is generated. Keyless
-          throughout (managed identity + RBAC).
+          <strong>What runs on every report:</strong> the PDF's embedded text is read with pypdfium2, the
+          report type (individual vs commercial) is recognised, and Azure Document Intelligence provides OCR /
+          layout; the report text plus the extraction instructions go to the Foundry <strong>gpt-5.4-mini</strong>
+          deployment, which returns structured JSON; a rule engine then normalises, summarises and reconciles it;
+          on approval, Excel is generated. Keyless throughout (managed identity + RBAC).
         </div>
       </div>
 
@@ -162,9 +164,9 @@
             <td>One entry point; the file is streamed and parsed in memory, never written to disk.</td>
           </tr>
           <tr>
-            <td><strong>2. Read text layer</strong><br><span class="muted small">pypdfium2</span></td>
-            <td>FastAPI extracts the PDF's embedded text, one line per row.</td>
-            <td>Born-digital CIBIL PDFs carry an exact text layer, so reading it directly avoids OCR errors; pypdfium2 is permissively licensed (BFSI-safe).</td>
+            <td><strong>2. Read text &amp; recognise report type</strong><br><span class="muted small">pypdfium2</span></td>
+            <td>FastAPI extracts the PDF's embedded text, one line per row, then recognises whether it is an <strong>individual / consumer</strong> or a <strong>commercial</strong> CIBIL report and picks the matching extraction strategy.</td>
+            <td>Born-digital CIBIL PDFs carry an exact text layer, so reading it directly avoids OCR errors (pypdfium2 is permissively licensed, BFSI-safe); the report type decides how the text is chunked for the model.</td>
           </tr>
           <tr>
             <td><strong>3. OCR &amp; layout</strong><br><span class="muted small">Azure Document Intelligence</span></td>
@@ -173,8 +175,8 @@
           </tr>
           <tr>
             <td><strong>4. Extract</strong><br><span class="muted small">Foundry · gpt-5.4-mini</span></td>
-            <td>The report text plus the extraction instructions go to the Foundry-hosted <code>gpt-5.4-mini</code> deployment (the same instructions saved on the <code>cibil-extractor</code> agent). Returns the customer, all 51 accounts and the enquiries as compact JSON.</td>
-            <td>Only an LLM turns messy, inconsistent report text into the exact schema reliably; a reasoning model handles 51 tradelines in one pass; keyless via managed identity + RBAC.</td>
+            <td>The report text plus the extraction instructions go to the Foundry-hosted <code>gpt-5.4-mini</code> deployment (the same instructions saved on the <code>cibil-extractor</code> agent), which returns the customer, every account and the enquiries as compact JSON. A small consumer report goes in one pass; a large commercial report is split per facility and its chunks run in parallel, then merged.</td>
+            <td>Only an LLM turns messy, inconsistent report text into the exact schema reliably; per-facility chunking lets a 150+ page report be read completely without truncation; keyless via managed identity + RBAC.</td>
           </tr>
           <tr>
             <td><strong>5. Business rules</strong><br><span class="muted small">rules.py</span></td>
@@ -197,6 +199,31 @@
             <td>The output must match the exact template; openpyxl gives cell-level control including rich-text red.</td>
           </tr>
         </table>
+      </div>
+
+      <div class="card">
+        <h2>Adaptive extraction — individual vs commercial reports</h2>
+        <p class="muted">As soon as the text is read, the pipeline recognises which kind of CIBIL report it
+          is and picks the matching extraction strategy — so a short consumer report and a 150+ page commercial
+          report both come through cleanly.</p>
+        <table class="who">
+          <tr><th>Report type</th><th>How it is recognised</th><th>Extraction strategy</th></tr>
+          <tr>
+            <td><strong>Individual / Consumer CIR</strong></td>
+            <td>Compact account-summary table; no “Commercial Credit Information Report” header.</td>
+            <td>The report is small, so its text goes to the model in a single pass.</td>
+          </tr>
+          <tr>
+            <td><strong>Commercial CIR</strong></td>
+            <td>“Commercial Credit Information Report” header; each account is a repeated “Credit Facility N” block.</td>
+            <td>Split on the per-facility boundary — a front-matter chunk (customer + credit summary + enquiries)
+              plus batches of whole facility blocks — extracted in parallel and merged. Every facility is read
+              exactly once, so account counts and totals reconstruct exactly even across 150+ pages.</td>
+          </tr>
+        </table>
+        <p class="muted small" style="margin-top:10px">Why it matters: a commercial report lists each tradeline
+          as its own multi-page block, so a single model call would truncate a long report and repeat accounts.
+          Splitting on the natural facility boundary keeps every account intact and lets long reports reconcile.</p>
       </div>
 
       <div class="card">

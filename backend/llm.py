@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import time
 
 from . import config
@@ -41,7 +42,10 @@ Each enquiry detail is an ARRAY: [member, date, purpose, amount].
 
 Rules:
 - Return EVERY account / tradeline found, in the order they appear. Do not skip any.
-- Amounts are integers in rupees: strip currency symbol and commas (1,800,000 -> 1800000). Use 0 for zero, null if absent.
+- Return each DISTINCT tradeline exactly once. The SAME account's header can repeat across its own detail / history pages — do not emit those repeats as extra accounts. But two DIFFERENT accounts are separate even when their amounts look identical: every "Credit Facility N" block, or every distinct ACCOUNT NO, is its own account — never merge or skip them.
+- Amounts are integers in rupees: strip currency symbol and commas (1,800,000 -> 1800000). Use 0 for a printed zero, null if the figure is absent.
+- For each account the Sanctioned, Outstanding Balance and Overdue values are the single figures printed at the TOP of its block (labelled SANCTIONED, OUTSTANDING BALANCE and OVERDUE). NEVER use the month-by-month "O/S ₹" or "OD ₹" amounts inside the Asset-Classification / DPD grid — those are historical monthly snapshots, not the current values.
+- In credit_summary use the OVERALL COMBINED total across all facilities and lenders (the grand total for the whole report), never a per-institution or per-category subtotal. Fill only the totals the report explicitly prints; if a total is not printed, use null (never 0 or a guess). A commercial report's summary usually prints the total outstanding but no total sanctioned — leave total_sanction null then.
 - Dates use DD-MM-YYYY. Counts and cibil_score are integers.
 - dpd is the DPD token exactly as shown (e.g. "000"); if a 12-month grid, join latest-to-oldest with " | ".
 - ownership is one of: Individual, Joint, Guarantor. financier is the member/lender name only.
@@ -75,19 +79,40 @@ def _row_to_enquiry(row) -> dict:
 
 
 _clients: dict = {}
+_token_lock = threading.Lock()
+_token = {"value": None, "exp": 0.0}
+_TOKEN_SCOPE = "https://cognitiveservices.azure.com/.default"
+
+
+def _bearer() -> str:
+    """Thread-safe cached AAD token so parallel chunk calls don't each shell out to az."""
+    if _token["value"] and _token["exp"] - 300 > time.time():
+        return _token["value"]
+    with _token_lock:
+        if _token["value"] and _token["exp"] - 300 > time.time():
+            return _token["value"]
+        tok = config.credential().get_token(_TOKEN_SCOPE)
+        _token["value"], _token["exp"] = tok.token, tok.expires_on
+        return _token["value"]
+
+
+def warm() -> None:
+    """Pre-fetch the token once (serially) before parallel extraction begins."""
+    try:
+        _bearer()
+    except Exception:
+        pass
 
 
 def _client(endpoint: str, api_version: str):
     key = (endpoint, api_version)
     if key not in _clients:
         from openai import AzureOpenAI
-        from azure.identity import get_bearer_token_provider
-        token_provider = get_bearer_token_provider(
-            config.credential(), "https://cognitiveservices.azure.com/.default")
-        # max_retries: the SDK backs off (honouring Retry-After) on 429/5xx, so
-        # brief token-per-minute bursts self-heal instead of failing the upload.
+        # _bearer caches the token behind a lock, so parallel chunk requests reuse
+        # one token instead of each shelling out to the Azure CLI (auth stampede).
+        # max_retries: the SDK backs off (Retry-After) on 429/5xx so bursts self-heal.
         _clients[key] = AzureOpenAI(azure_endpoint=endpoint,
-                                    azure_ad_token_provider=token_provider,
+                                    azure_ad_token_provider=_bearer,
                                     api_version=api_version,
                                     max_retries=6,
                                     timeout=120.0)
