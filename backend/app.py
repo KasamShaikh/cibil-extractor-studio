@@ -320,7 +320,11 @@ async def download_excel(job_id: str):
 # --------------------------------------------------------------------------- #
 @app.get("/")
 async def index():
-    return FileResponse(FRONTEND / "index.html")
+    # Inject an asset version (file mtimes) so browsers always fetch fresh JS/CSS.
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    ver = int(max((FRONTEND / "app.js").stat().st_mtime, (FRONTEND / "styles.css").stat().st_mtime))
+    html = html.replace("/app.js", f"/app.js?v={ver}").replace("/styles.css", f"/styles.css?v={ver}")
+    return Response(content=html, media_type="text/html")
 
 
 @app.get("/health")

@@ -61,6 +61,18 @@ const EXTRACT_STAGES = [
   "Preparing maker-checker review",
 ];
 
+// Rotating micro-updates shown on the final step so a long extraction feels alive.
+const WAIT_MESSAGES = [
+  "Reading account details\u2026",
+  "Checking sanctioned vs outstanding\u2026",
+  "Tallying overdue amounts\u2026",
+  "Cross-checking the credit summary\u2026",
+  "Calculating ownership totals\u2026",
+  "Reconciling loan-type summaries\u2026",
+  "Validating enquiry history\u2026",
+  "Finalising the numbers\u2026",
+];
+
 function fmtDur(ms) {
   ms = Math.max(0, Math.round(ms));
   if (ms < 1000) return ms + " ms";
@@ -82,7 +94,7 @@ function buildStageTimes(p, clientTotalMs) {
   };
 }
 
-function renderActivity(activeIdx, done, times) {
+function renderActivity(activeIdx, done, times, activeLabel) {
   const box = document.getElementById("extract-activity");
   if (!box) return;
   box.hidden = false;
@@ -95,7 +107,7 @@ function renderActivity(activeIdx, done, times) {
     const state = done || i < activeIdx ? "done" : (i === activeIdx ? "active" : "todo");
     const row = el("div", "act-row " + state);
     row.append(el("span", "act-ico", state === "done" ? "\u2713" : ""));
-    row.append(el("span", "act-label", s));
+    row.append(el("span", "act-label", (!done && state === "active" && activeLabel) ? activeLabel : s));
     if (done && times && times.steps && times.steps[i] != null)
       row.append(el("span", "act-time", fmtDur(times.steps[i])));
     list.append(row);
@@ -134,10 +146,12 @@ function initUpload() {
     $("#file-hint").hidden = true;
     btn.hidden = true;
     let idx = 0;
+    let wi = 0;
     const t0 = performance.now();
     renderActivity(idx, false);
     const timer = setInterval(() => {
       if (idx < EXTRACT_STAGES.length - 1) renderActivity(++idx, false);
+      else renderActivity(idx, false, null, WAIT_MESSAGES[wi++ % WAIT_MESSAGES.length]);
     }, 1600);
     try {
       const fd = new FormData();
