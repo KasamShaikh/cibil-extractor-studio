@@ -312,7 +312,11 @@ function renderAccountsTable() {
         inp = el("input");
         inp.value = a[key] ?? "";
         if (type === "num") { inp.type = "number"; inp.className = "num-input"; }
-        if (key === "dpd" && a.peak_dpd > 0) inp.classList.add("dpd-red");
+        if (key === "dpd") {
+          inp.classList.add("dpd-input");
+          inp.title = inp.value; // full 12-month history on hover (the cell clips the long string)
+          if (a.peak_dpd > 0) inp.classList.add("dpd-red");
+        }
       }
       inp.dataset.id = a._id;
       inp.dataset.field = key;

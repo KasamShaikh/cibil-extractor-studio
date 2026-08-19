@@ -183,6 +183,7 @@ table.grid td.flagged { background: var(--flag); }
 table.grid td input, table.grid td select { padding: 5px 6px; font-size: 12.5px; }
 .num-input { text-align: right; }
 .dpd-red { color: var(--red); font-weight: 700; }
+.dpd-input { min-width: 240px; }
 .row-dpd td { background: #fff5f5 !important; }
 
 /* Reconciliation */
