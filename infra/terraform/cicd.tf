@@ -1,6 +1,11 @@
 # CI/CD identity for GitHub Actions — a user-assigned identity with a GitHub
 # federated credential (OIDC). No client secret, no app-registration required.
 
+locals {
+  # Standard GitHub OIDC subject, unless overridden (e.g. orgs that enforce immutable ID-qualified subjects).
+  ci_subject = var.ci_subject != "" ? var.ci_subject : "repo:${var.github_repo}:ref:refs/heads/main"
+}
+
 resource "azurerm_user_assigned_identity" "ci" {
   name                = "id-ci-${local.base}"
   location            = var.location
@@ -12,7 +17,7 @@ resource "azurerm_federated_identity_credential" "ci_main" {
   parent_id = azurerm_user_assigned_identity.ci.id
   audience  = ["api://AzureADTokenExchange"]
   issuer    = "https://token.actions.githubusercontent.com"
-  subject   = "repo:${var.github_repo}:ref:refs/heads/main"
+  subject   = local.ci_subject
 }
 
 # Build + push images to ACR (az acr build) ...

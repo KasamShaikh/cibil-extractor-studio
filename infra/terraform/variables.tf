@@ -80,6 +80,12 @@ variable "github_repo" {
   default = "KasamShaikh/cibil-extractor-studio"
 }
 
+variable "ci_subject" {
+  type        = string
+  default     = ""
+  description = "Override the GitHub OIDC subject for the CI federated credential. Empty = standard 'repo:<owner>/<repo>:ref:refs/heads/main'. Set explicitly when your GitHub org enforces immutable ID-qualified subjects (repo:owner@ID/repo@ID:ref:...)."
+}
+
 variable "k8s_namespace" {
   type    = string
   default = "cibil"

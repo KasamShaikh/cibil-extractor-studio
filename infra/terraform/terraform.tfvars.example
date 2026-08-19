@@ -16,6 +16,10 @@ subscription_id = "00000000-0000-0000-0000-000000000000"
 #                      use this on subscriptions that block public IP creation)
 # compute_target = "aks"
 
+# If your GitHub org enforces immutable ID-qualified OIDC subjects, set this to the exact
+# subject GitHub presents (see the Actions log / repos/.../actions/oidc/customization/sub):
+# ci_subject = "repo:OWNER@OWNERID/REPO@REPOID:ref:refs/heads/main"
+
 # --- To REUSE existing Azure AI and an existing resource group instead: ---
 # create_ai             = false
 # resource_group_name   = "your-existing-rg"
