@@ -10,6 +10,12 @@ subscription_id = "00000000-0000-0000-0000-000000000000"
 # model_version    = "2026-03-17"
 # github_repo      = "your-org/cibil-extractor-studio"
 
+# Where the app runs:
+#   "aks"           -> Azure Kubernetes Service + LoadBalancer (default; needs public IP egress)
+#   "containerapps" -> Azure Container Apps (managed ingress, no customer public IP required;
+#                      use this on subscriptions that block public IP creation)
+# compute_target = "aks"
+
 # --- To REUSE existing Azure AI and an existing resource group instead: ---
 # create_ai             = false
 # resource_group_name   = "your-existing-rg"

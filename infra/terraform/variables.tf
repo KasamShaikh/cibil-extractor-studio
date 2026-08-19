@@ -9,6 +9,16 @@ variable "location" {
   description = "Region for AKS, ACR, Log Analytics (and Document Intelligence when created)."
 }
 
+variable "compute_target" {
+  type        = string
+  default     = "aks"
+  description = "Where the app runs: 'aks' (default, for customer environments) or 'containerapps' (managed ingress, no public IP required)."
+  validation {
+    condition     = contains(["aks", "containerapps"], var.compute_target)
+    error_message = "compute_target must be either 'aks' or 'containerapps'."
+  }
+}
+
 variable "resource_group_name" {
   type        = string
   default     = ""

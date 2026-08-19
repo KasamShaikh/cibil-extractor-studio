@@ -7,8 +7,10 @@ resource "random_string" "suffix" {
 }
 
 locals {
-  suffix = random_string.suffix.result
-  base   = "${var.name_prefix}-${local.suffix}"
+  suffix  = random_string.suffix.result
+  base    = "${var.name_prefix}-${local.suffix}"
+  use_aks = var.compute_target == "aks"
+  use_aca = var.compute_target == "containerapps"
 }
 
 # Resource group: create a new one, or use an existing one (var.resource_group_name).
@@ -44,6 +46,7 @@ resource "azurerm_container_registry" "acr" {
 }
 
 resource "azurerm_kubernetes_cluster" "aks" {
+  count               = local.use_aks ? 1 : 0
   name                = "aks-${local.base}"
   location            = var.location
   resource_group_name = local.rg_name
@@ -74,7 +77,27 @@ resource "azurerm_kubernetes_cluster" "aks" {
 
 # Let AKS pull images from ACR without credentials.
 resource "azurerm_role_assignment" "aks_acr_pull" {
+  count                = local.use_aks ? 1 : 0
   scope                = azurerm_container_registry.acr.id
   role_definition_name = "AcrPull"
-  principal_id         = azurerm_kubernetes_cluster.aks.kubelet_identity[0].object_id
+  principal_id         = azurerm_kubernetes_cluster.aks[0].kubelet_identity[0].object_id
+}
+
+# --- Azure Container Apps (compute_target = "containerapps") --- #
+# Consumption environment: ingress is fronted by Microsoft-managed infrastructure,
+# so no customer public IP is created (works on subscriptions that block public IPs).
+resource "azurerm_container_app_environment" "aca" {
+  count                      = local.use_aca ? 1 : 0
+  name                       = "cae-${local.base}"
+  location                   = var.location
+  resource_group_name        = local.rg_name
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.law.id
+}
+
+# Let the app's user-assigned identity pull the image from ACR (keyless).
+resource "azurerm_role_assignment" "app_acr_pull" {
+  count                = local.use_aca ? 1 : 0
+  scope                = azurerm_container_registry.acr.id
+  role_definition_name = "AcrPull"
+  principal_id         = azurerm_user_assigned_identity.app.principal_id
 }

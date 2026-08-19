@@ -22,9 +22,10 @@ resource "azurerm_role_assignment" "ci_acr" {
   principal_id         = azurerm_user_assigned_identity.ci.principal_id
 }
 
-# ... and deploy to the cluster (kubectl via --admin kubeconfig).
+# ... and deploy to the cluster (kubectl via --admin kubeconfig). AKS path only.
 resource "azurerm_role_assignment" "ci_aks" {
-  scope                = azurerm_kubernetes_cluster.aks.id
+  count                = local.use_aks ? 1 : 0
+  scope                = azurerm_kubernetes_cluster.aks[0].id
   role_definition_name = "Azure Kubernetes Service Cluster Admin Role"
   principal_id         = azurerm_user_assigned_identity.ci.principal_id
 }

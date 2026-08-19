@@ -11,7 +11,19 @@ output "acr_login_server" {
 }
 
 output "aks_name" {
-  value = azurerm_kubernetes_cluster.aks.name
+  value = local.use_aks ? azurerm_kubernetes_cluster.aks[0].name : ""
+}
+
+output "compute_target" {
+  value = var.compute_target
+}
+
+output "container_app_env" {
+  value = local.use_aca ? azurerm_container_app_environment.aca[0].name : ""
+}
+
+output "app_identity_id" {
+  value = azurerm_user_assigned_identity.app.id
 }
 
 output "di_endpoint" {

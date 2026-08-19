@@ -64,11 +64,14 @@ resource "azurerm_user_assigned_identity" "app" {
   resource_group_name = local.rg_name
 }
 
+# Workload-identity federation is only used by the AKS path; Container Apps binds
+# the user-assigned identity to the app directly.
 resource "azurerm_federated_identity_credential" "app" {
+  count     = local.use_aks ? 1 : 0
   name      = "cibil-app"
   parent_id = azurerm_user_assigned_identity.app.id
   audience  = ["api://AzureADTokenExchange"]
-  issuer    = azurerm_kubernetes_cluster.aks.oidc_issuer_url
+  issuer    = azurerm_kubernetes_cluster.aks[0].oidc_issuer_url
   subject   = "system:serviceaccount:${var.k8s_namespace}:${var.k8s_service_account}"
 }
 

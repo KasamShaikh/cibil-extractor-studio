@@ -1,4 +1,4 @@
-name: Build and deploy to AKS
+name: Build and deploy to Azure Container Apps
 
 on:
   push:
@@ -33,27 +33,14 @@ jobs:
             --image "${IMAGE}:latest" \
             --file Dockerfile .
 
-      - name: Get AKS credentials
-        run: az aks get-credentials -g "${{ vars.RESOURCE_GROUP }}" -n "${{ vars.AKS_NAME }}" --admin --overwrite-existing
-
-      - name: Deploy to AKS
-        env:
-          ACR_LOGIN_SERVER: ${{ vars.ACR_LOGIN_SERVER }}
-          IMAGE_TAG: ${{ github.sha }}
-          APP_CLIENT_ID: ${{ secrets.APP_CLIENT_ID }}
-          DI_ENDPOINT: ${{ vars.DI_ENDPOINT }}
-          FOUNDRY_ENDPOINT: ${{ vars.FOUNDRY_ENDPOINT }}
-          FOUNDRY_DEPLOYMENT: ${{ vars.FOUNDRY_DEPLOYMENT }}
-          FOUNDRY_API_VERSION: ${{ vars.FOUNDRY_API_VERSION }}
-          FOUNDRY_REGION: ${{ vars.FOUNDRY_REGION }}
+      - name: Deploy to Container Apps
         run: |
-          kubectl apply -f deploy/k8s/namespace.yaml
-          envsubst < deploy/k8s/app.yaml | kubectl apply -f -
-          kubectl -n cibil rollout status deploy/cibil-extractor --timeout=240s
-          echo "### Service" >> "$GITHUB_STEP_SUMMARY"
-          kubectl -n cibil get svc cibil-extractor -o wide >> "$GITHUB_STEP_SUMMARY"
+          az containerapp update \
+            --name "${{ vars.CONTAINER_APP_NAME }}" \
+            --resource-group "${{ vars.RESOURCE_GROUP }}" \
+            --image "${{ vars.ACR_LOGIN_SERVER }}/${IMAGE}:${{ github.sha }}"
 
-      - name: Show public IP
+      - name: Show app URL
         run: |
-          IP=$(kubectl -n cibil get svc cibil-extractor -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-          echo "App URL: http://$IP" >> "$GITHUB_STEP_SUMMARY"
+          FQDN=$(az containerapp show -n "${{ vars.CONTAINER_APP_NAME }}" -g "${{ vars.RESOURCE_GROUP }}" --query properties.configuration.ingress.fqdn -o tsv)
+          echo "App URL: https://$FQDN" >> "$GITHUB_STEP_SUMMARY"
