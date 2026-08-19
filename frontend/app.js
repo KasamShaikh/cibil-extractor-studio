@@ -61,21 +61,47 @@ const EXTRACT_STAGES = [
   "Preparing maker-checker review",
 ];
 
-function renderActivity(activeIdx, done) {
+function fmtDur(ms) {
+  ms = Math.max(0, Math.round(ms));
+  if (ms < 1000) return ms + " ms";
+  return (ms / 1000).toFixed(ms < 10000 ? 2 : 1) + " s";
+}
+
+// Maps the backend's real phase timings onto the visible steps.
+function buildStageTimes(p, clientTotalMs) {
+  p = p || {};
+  const di = p.di_ms ?? p.read_ms ?? 0;
+  const llm = p.llm_ms ?? 0;
+  const rules = p.rules_ms ?? 0;
+  const total = p.total_ms ?? 0;
+  const upload = Math.max(0, clientTotalMs - total); // upload + network + render
+  return {
+    total: clientTotalMs,
+    steps: [upload, null, di, llm, rules, null],
+    note: (di && llm) ? "Page digitisation and AI extraction run in parallel, so the total is less than their sum." : "",
+  };
+}
+
+function renderActivity(activeIdx, done, times) {
   const box = document.getElementById("extract-activity");
   if (!box) return;
   box.hidden = false;
   box.innerHTML = "";
-  box.append(el("div", "act-title", done ? "✓ Extraction complete" : "Extracting report…"));
+  let title = done ? "\u2713 Extraction complete" : "Extracting report\u2026";
+  if (done && times && times.total != null) title += "  \u00b7  " + fmtDur(times.total);
+  box.append(el("div", "act-title", title));
   const list = el("div", "act-list");
   EXTRACT_STAGES.forEach((s, i) => {
     const state = done || i < activeIdx ? "done" : (i === activeIdx ? "active" : "todo");
     const row = el("div", "act-row " + state);
-    row.append(el("span", "act-ico", state === "done" ? "✓" : ""));
+    row.append(el("span", "act-ico", state === "done" ? "\u2713" : ""));
     row.append(el("span", "act-label", s));
+    if (done && times && times.steps && times.steps[i] != null)
+      row.append(el("span", "act-time", fmtDur(times.steps[i])));
     list.append(row);
   });
   box.append(list);
+  if (done && times && times.note) box.append(el("div", "act-foot", times.note));
 }
 
 function initUpload() {
@@ -108,6 +134,7 @@ function initUpload() {
     $("#file-hint").hidden = true;
     btn.hidden = true;
     let idx = 0;
+    const t0 = performance.now();
     renderActivity(idx, false);
     const timer = setInterval(() => {
       if (idx < EXTRACT_STAGES.length - 1) renderActivity(++idx, false);
@@ -119,8 +146,8 @@ function initUpload() {
       fd.append("model", "");
       job = await api("/api/extract", { method: "POST", body: fd });
       clearInterval(timer);
-      renderActivity(EXTRACT_STAGES.length, true);
-      setTimeout(render, 500);
+      renderActivity(EXTRACT_STAGES.length, true, buildStageTimes(job.processing, performance.now() - t0));
+      setTimeout(render, 1200);
     } catch (err) {
       clearInterval(timer);
       $("#extract-activity").hidden = true;
@@ -463,7 +490,12 @@ function initActions() {
       job = await api(`/api/job/${job.id}/approve`, { method: "POST" });
       render();
     }));
-
+  $("#btn-approve-dl").addEventListener("click", (e) =>
+    withBusy(e.target, "Approving\u2026", async () => {
+      job = await api(`/api/job/${job.id}/approve`, { method: "POST" });
+      if (job.status === "approved") window.location.href = `/api/job/${job.id}/excel`;
+      render();
+    }));
   $("#btn-reject").addEventListener("click", (e) => {
     const reason = $("#reject-reason").value.trim();
     if (!reason) { alert("Please enter a reason to reject."); return; }
