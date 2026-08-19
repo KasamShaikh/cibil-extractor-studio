@@ -84,9 +84,13 @@ def _client(endpoint: str, api_version: str):
         from azure.identity import get_bearer_token_provider
         token_provider = get_bearer_token_provider(
             config.credential(), "https://cognitiveservices.azure.com/.default")
+        # max_retries: the SDK backs off (honouring Retry-After) on 429/5xx, so
+        # brief token-per-minute bursts self-heal instead of failing the upload.
         _clients[key] = AzureOpenAI(azure_endpoint=endpoint,
                                     azure_ad_token_provider=token_provider,
-                                    api_version=api_version)
+                                    api_version=api_version,
+                                    max_retries=6,
+                                    timeout=120.0)
     return _clients[key]
 
 
