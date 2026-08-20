@@ -68,7 +68,7 @@ def _chunk_commercial(text: str):
     front = text[:starts[0]]
     blocks = [text[starts[i]:(starts[i + 1] if i + 1 < len(starts) else len(text))]
               for i in range(len(starts))]
-    chunks = [front]
+    chunks = [(front, 0)]
     for i in range(0, len(blocks), BLOCKS_PER_CHUNK):
         batch = blocks[i:i + BLOCKS_PER_CHUNK]
         # Tell the model exactly how many facility blocks this chunk holds so it
@@ -77,7 +77,7 @@ def _chunk_commercial(text: str):
                 f"Return exactly {len(batch)} accounts \u2014 one per 'Credit Facility' "
                 f"block, each identified by its own ACCOUNT NO, even if two blocks "
                 f"show identical amounts.]\n\n")
-        chunks.append(hint + "\n".join(batch))
+        chunks.append((hint + "\n".join(batch), len(batch)))
     return chunks
 
 
@@ -121,13 +121,13 @@ def _chunk_consumer(text: str):
     # DISCLOSED"), so two similar tradelines are otherwise indistinguishable and the
     # model may merge them. Tag each block with a unique index to force one per block.
     blocks = [f"[[ ACCOUNT {i} of {n} ]]\n{b}" for i, b in enumerate(raw, 1)]
-    chunks = [front]
+    chunks = [(front, 0)]
     for i in range(0, len(blocks), BLOCKS_PER_CHUNK):
         batch = blocks[i:i + BLOCKS_PER_CHUNK]
         hint = (f"[This section contains {len(batch)} account blocks, each marked "
                 f"'[[ ACCOUNT n of {n} ]]'. Return exactly {len(batch)} accounts \u2014 "
                 f"one per marked block, even if two blocks look identical.]\n\n")
-        chunks.append(hint + "\n".join(batch))
+        chunks.append((hint + "\n".join(batch), len(batch)))
     return chunks
 
 
@@ -188,16 +188,22 @@ def _merge(outs: list, dedup: bool = True) -> dict:
     return {"customer": best_customer, "accounts": accounts, "enquiries": best_enq}
 
 
-def _extract_chunk(chunk: str, model: dict):
-    """One chunk with a single retry so a transient failure doesn't silently drop
-    a facility (or the credit-summary front matter) from the merged result."""
-    try:
-        return llm.extract(chunk, model)
-    except Exception:
+def _extract_chunk(chunk: str, model: dict, expected=None, attempts: int = 3):
+    """Extract one chunk, retrying if it returns fewer accounts than the block count
+    it was given (the model occasionally merges look-alike, privacy-masked accounts)
+    or on a transient failure. Keeps the richest result across attempts."""
+    best, best_n = None, -1
+    for _ in range(attempts):
         try:
-            return llm.extract(chunk, model)
+            r = llm.extract(chunk, model)
         except Exception:
-            return None
+            continue
+        n = len((r.get("data") or {}).get("accounts") or [])
+        if n > best_n:
+            best, best_n = r, n
+        if not expected or best_n >= expected:
+            break
+    return best
 
 
 def extract(pdf_bytes: bytes, filename: str, model: dict) -> tuple[dict, dict]:
@@ -221,13 +227,16 @@ def extract(pdf_bytes: bytes, filename: str, model: dict) -> tuple[dict, dict]:
     # back to character chunks (which can repeat, so dedup on merge).
     structured = (_chunk_commercial(content) if report_type == "commercial"
                   else _chunk_consumer(content))
-    chunks, dedup = (structured, False) if structured else (_chunk_text(content), True)
+    # Chunks are (text, expected_account_count); the char-chunk fallback has no
+    # per-chunk count, so no retry-if-short there.
+    chunks, dedup = ((structured, False) if structured
+                     else ([(c, None) for c in _chunk_text(content)], True))
     # Warm one token serially so the parallel calls reuse it instead of each thread
     # invoking the Azure CLI at once (an auth stampede).
     llm.warm()
     t0 = time.perf_counter()
     with ThreadPoolExecutor(max_workers=max(1, min(len(chunks), 9))) as pool:
-        llm_futures = [pool.submit(_extract_chunk, c, model) for c in chunks]
+        llm_futures = [pool.submit(_extract_chunk, c, model, exp) for c, exp in chunks]
         outs = [r for r in (f.result() for f in llm_futures) if r]
     llm_wall_ms = (time.perf_counter() - t0) * 1000
     if not outs:

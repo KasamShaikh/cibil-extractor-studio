@@ -154,27 +154,39 @@ def purpose_wise_enquiries(detail: list[dict]) -> list[dict]:
 # --------------------------------------------------------------------------- #
 # Reconciliation
 # --------------------------------------------------------------------------- #
-def _check(label, expected, actual) -> dict:
-    ok = expected is None or expected == actual
-    return {"check": label, "expected": expected, "actual": actual, "ok": ok}
+def _check(label, expected, actual, baseline_ok: bool = True) -> dict:
+    if expected is None:
+        # Missing baseline: if the report's own totals could not be read at all,
+        # flag as unverified (never a silent pass); otherwise this particular figure
+        # is just not printed (e.g. a commercial CIR states outstanding, not sanction).
+        if baseline_ok:
+            return {"check": label, "expected": None, "actual": actual, "ok": True}
+        return {"check": label, "expected": None, "actual": actual,
+                "ok": False, "unverified": True}
+    return {"check": label, "expected": expected, "actual": actual,
+            "ok": expected == actual}
 
 
 def reconcile(parsed: dict, accounts: list[dict]) -> list[dict]:
     cs = parsed["customer"]["credit_summary"]
+    # The report's printed totals are the baseline. If even the headline outstanding
+    # is unreadable, the summary could not be parsed — checks fail loud (unverified)
+    # rather than silently passing on an unfamiliar layout.
+    baseline_ok = cs.get("total_outstanding") is not None
     checks = [
-        _check("Account count", cs.get("total_accounts"), len(accounts)),
+        _check("Account count", cs.get("total_accounts"), len(accounts), baseline_ok),
         _check("Total sanction amount", cs.get("total_sanction"),
-               sum(_exposure(a.get("sanction")) for a in accounts)),
+               sum(_exposure(a.get("sanction")) for a in accounts), baseline_ok),
         _check("Total current outstanding", cs.get("total_outstanding"),
-               sum(_exposure(a.get("outstanding")) for a in accounts)),
+               sum(_exposure(a.get("outstanding")) for a in accounts), baseline_ok),
         _check("Total overdue", cs.get("total_overdue"),
-               sum((a.get("overdue") or 0) for a in accounts)),
+               sum((a.get("overdue") or 0) for a in accounts), baseline_ok),
         _check("Closed accounts (outstanding = 0)", cs.get("closed_accounts"),
-               sum(1 for a in accounts if _exposure(a.get("outstanding")) == 0)),
+               sum(1 for a in accounts if _exposure(a.get("outstanding")) == 0), baseline_ok),
     ]
     enq = parsed["enquiries"]
     checks.append(_check("Enquiries (lifetime)", enq["summary"].get("lifetime"),
-                         len(enq["detail"])))
+                         len(enq["detail"]), baseline_ok))
     return checks
 
 

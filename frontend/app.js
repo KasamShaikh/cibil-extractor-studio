@@ -288,12 +288,14 @@ function renderProcessing(container, p) {
 function renderReconciliation(container) {
   container.innerHTML = "";
   job.data.reconciliation.forEach((c) => {
-    const item = el("div", "recon-item " + (c.ok ? "ok" : "fail"));
+    const state = c.unverified ? "warn" : (c.ok ? "ok" : "fail");
+    const item = el("div", "recon-item " + state);
     item.append(el("span", "dot"));
     const body = el("div");
     body.append(el("div", "rc-label", c.check));
-    body.append(el("div", "rc-vals",
-      `expected ${money0(c.expected)} · got ${money0(c.actual)}`));
+    body.append(el("div", "rc-vals", c.unverified
+      ? "could not read the report\u2019s total \u2014 manual review"
+      : `expected ${money0(c.expected)} \u00b7 got ${money0(c.actual)}`));
     item.append(body);
     container.append(item);
   });

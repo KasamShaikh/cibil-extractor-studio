@@ -194,6 +194,8 @@ table.grid td input, table.grid td select { padding: 5px 6px; font-size: 12.5px;
 .recon-item .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
 .recon-item.ok .dot { background: var(--ok); }
 .recon-item.fail .dot { background: var(--red); }
+.recon-item.warn .dot { background: #e0a100; }
+.recon-item.warn { border-color: #e7c14d; background: #fff8e6; }
 .recon-item .rc-label { font-size: 13px; font-weight: 600; }
 .recon-item .rc-vals { font-size: 12px; color: var(--muted); }
 
