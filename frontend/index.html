@@ -228,18 +228,55 @@
       </div>
 
       <div class="card">
-        <h2>What each component does</h2>
-        <p class="muted">The current PoC pipeline, component by component — who is responsible for what.</p>
+        <h2>What each component is — and does here</h2>
+        <p class="muted">Each part of the pipeline in one line: what the technology is, and the job it does in this app.</p>
         <table class="who">
-          <tr><th>Component</th><th>What it does</th><th>Why this component</th></tr>
-          <tr><td>Browser UI <span class="muted small">HTML · CSS · JS</span></td><td>Upload, Maker / Checker review and edit, download.</td><td>Zero-install thin client for the CPA users.</td></tr>
-          <tr><td>FastAPI backend</td><td>Orchestrates the pipeline; holds the in-memory job store.</td><td>Fast async Python API; keeps the PDF in memory (privacy).</td></tr>
-          <tr><td>pypdfium2 <span class="muted small">text layer</span></td><td>Reads the PDF's embedded text, one line per row.</td><td>Exact for born-digital PDFs; permissive licence (BFSI-safe).</td></tr>
-          <tr><td>Azure Document Intelligence <span class="muted small">prebuilt-layout OCR</span></td><td>Prebuilt-layout OCR and table structure.</td><td>Makes scanned / photographed reports work — no text layer needed.</td></tr>
-          <tr><td>Microsoft Foundry <span class="muted small">gpt-5.4-mini · cibil-extractor agent</span></td><td>Applies the extraction instructions to the report text → structured JSON (customer, 51 accounts, enquiries).</td><td>Turns messy text into the exact schema; reasoning model = reliable; keyless MI + RBAC; instructions governed in the Foundry portal.</td></tr>
-          <tr><td>rules.py</td><td>DPD normalization, account sequencing, ownership / loan-type / purpose summaries, NPA / SMA status, 6 reconciliation checks.</td><td>Math, sorting and reconciliation must be exact and auditable — not model-guessed; zero tokens.</td></tr>
-          <tr><td>openpyxl</td><td>Fills the 5-sheet Full Detail Excel — red DPD / overdue, totals row, DPD summary.</td><td>Cell-level control incl. rich-text red to match the client template.</td></tr>
-          <tr><td>Maker–Checker</td><td>Human review, edit, and approve / reject gate.</td><td>Four-eyes control and audit trail required in BFSI.</td></tr>
+          <tr><th>Component</th><th>What it is</th><th>What it does here</th></tr>
+          <tr>
+            <td><strong>Browser UI</strong><br><span class="muted small">HTML · CSS · JS</span></td>
+            <td>A plain web page — no framework, nothing to install.</td>
+            <td>The maker uploads a CIBIL PDF and reviews / edits the extracted data; the checker approves and downloads the Excel.</td>
+          </tr>
+          <tr>
+            <td><strong>FastAPI</strong><br><span class="muted small">Python backend</span></td>
+            <td>A fast, asynchronous Python framework for building web APIs.</td>
+            <td>Receives the upload and orchestrates the whole pipeline (read → detect → extract → rules → Excel), holding each report in an in-memory job store (nothing written to disk).</td>
+          </tr>
+          <tr>
+            <td><strong>pypdfium2</strong><br><span class="muted small">text layer</span></td>
+            <td>An open-source PDF library (Google's PDFium engine) that reads a PDF's embedded text.</td>
+            <td>Extracts the born-digital text layer — the authoritative input for the model — plus the page count. Permissively licensed (BFSI-safe).</td>
+          </tr>
+          <tr>
+            <td><strong>Report-type detection + chunking</strong><br><span class="muted small">ai_extract.py</span></td>
+            <td>A small deterministic step that classifies the report and splits it on natural account boundaries.</td>
+            <td>Recognises individual vs commercial CIR and splits into one chunk per account block (plus a front-matter chunk) so even a 170-page report extracts completely and in parallel — and reads the report's own summary totals for a stable reconciliation baseline.</td>
+          </tr>
+          <tr>
+            <td><strong>Azure Document Intelligence</strong><br><span class="muted small">OCR · scans only</span></td>
+            <td>Azure's OCR / document-understanding service that turns scanned images into text and tables.</td>
+            <td>Runs only when a PDF has no text layer (a scan / photo) — it OCRs the pages so the model has something to read. Every born-digital report skips it.</td>
+          </tr>
+          <tr>
+            <td><strong>Microsoft Foundry</strong><br><span class="muted small">gpt-5.4-mini · cibil-extractor</span></td>
+            <td>Microsoft's platform for deploying and governing AI models / agents; gpt-5.4-mini is a small reasoning model.</td>
+            <td>Reads each chunk of report text with the extraction instructions and returns the customer, every account and the enquiries as structured JSON — keyless via managed identity + RBAC.</td>
+          </tr>
+          <tr>
+            <td><strong>rules.py</strong><br><span class="muted small">deterministic</span></td>
+            <td>Plain Python business logic — no AI, no tokens.</td>
+            <td>Normalises DPD, sequences accounts, builds the ownership / loan-type / enquiry summaries, derives NPA / SMA status, and runs the 6 reconciliation checks against the report's printed totals.</td>
+          </tr>
+          <tr>
+            <td><strong>openpyxl</strong><br><span class="muted small">Excel writer</span></td>
+            <td>An open-source library for reading and writing Excel .xlsx files.</td>
+            <td>Fills the 5-sheet Full Detail workbook to the exact client template — rich-text red DPD / overdue, totals row and DPD summary.</td>
+          </tr>
+          <tr>
+            <td><strong>Maker–Checker</strong><br><span class="muted small">four-eyes gate</span></td>
+            <td>A control where one person prepares and a different person approves.</td>
+            <td>The maker verifies and edits the extraction; the checker approves (or rejects with a reason) before the Excel is generated — with a full audit trail.</td>
+          </tr>
         </table>
         <p class="muted small" style="margin-top:10px">On "Foundry": <code>gpt-5.4-mini</code> is deployed inside your Microsoft Foundry project, and the extraction instructions are registered there as the <code>cibil-extractor</code> agent — visible in the portal. The app sends the report text with those instructions to that deployment (keyless), so the model and its instructions live in Foundry.</p>
       </div>
