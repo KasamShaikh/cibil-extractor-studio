@@ -154,17 +154,22 @@ def purpose_wise_enquiries(detail: list[dict]) -> list[dict]:
 # --------------------------------------------------------------------------- #
 # Reconciliation
 # --------------------------------------------------------------------------- #
-def _check(label, expected, actual, baseline_ok: bool = True) -> dict:
+def _check(label, expected, actual, baseline_ok: bool = True, kind: str = "count") -> dict:
     if expected is None:
         # Missing baseline: if the report's own totals could not be read at all,
         # flag as unverified (never a silent pass); otherwise this particular figure
         # is just not printed (e.g. a commercial CIR states outstanding, not sanction).
         if baseline_ok:
-            return {"check": label, "expected": None, "actual": actual, "ok": True}
+            return {"check": label, "expected": None, "actual": actual, "ok": True, "kind": kind}
         return {"check": label, "expected": None, "actual": actual,
-                "ok": False, "unverified": True}
-    return {"check": label, "expected": expected, "actual": actual,
-            "ok": expected == actual}
+                "ok": False, "unverified": True, "kind": kind}
+    ok = expected == actual
+    out = {"check": label, "expected": expected, "actual": actual, "ok": ok, "kind": kind}
+    # Surface the gap so the checker sees how far off (and which direction) a failing
+    # check is, not merely that it failed.
+    if not ok and isinstance(expected, (int, float)) and isinstance(actual, (int, float)):
+        out["delta"] = actual - expected
+    return out
 
 
 def reconcile(parsed: dict, accounts: list[dict]) -> list[dict]:
@@ -174,19 +179,19 @@ def reconcile(parsed: dict, accounts: list[dict]) -> list[dict]:
     # rather than silently passing on an unfamiliar layout.
     baseline_ok = cs.get("total_outstanding") is not None
     checks = [
-        _check("Account count", cs.get("total_accounts"), len(accounts), baseline_ok),
+        _check("Account count", cs.get("total_accounts"), len(accounts), baseline_ok, "count"),
         _check("Total sanction amount", cs.get("total_sanction"),
-               sum(_exposure(a.get("sanction")) for a in accounts), baseline_ok),
+               sum(_exposure(a.get("sanction")) for a in accounts), baseline_ok, "money"),
         _check("Total current outstanding", cs.get("total_outstanding"),
-               sum(_exposure(a.get("outstanding")) for a in accounts), baseline_ok),
+               sum(_exposure(a.get("outstanding")) for a in accounts), baseline_ok, "money"),
         _check("Total overdue", cs.get("total_overdue"),
-               sum((a.get("overdue") or 0) for a in accounts), baseline_ok),
+               sum((a.get("overdue") or 0) for a in accounts), baseline_ok, "money"),
         _check("Closed accounts (outstanding = 0)", cs.get("closed_accounts"),
-               sum(1 for a in accounts if _exposure(a.get("outstanding")) == 0), baseline_ok),
+               sum(1 for a in accounts if _exposure(a.get("outstanding")) == 0), baseline_ok, "count"),
     ]
     enq = parsed["enquiries"]
     checks.append(_check("Enquiries (lifetime)", enq["summary"].get("lifetime"),
-                         len(enq["detail"]), baseline_ok))
+                         len(enq["detail"]), baseline_ok, "count"))
     return checks
 
 

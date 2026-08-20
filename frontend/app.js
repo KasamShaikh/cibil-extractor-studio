@@ -287,22 +287,61 @@ function renderProcessing(container, p) {
 
 function renderReconciliation(container) {
   container.innerHTML = "";
-  job.data.reconciliation.forEach((c) => {
+  const recon = job.data.reconciliation;
+  const issues = recon.filter((c) => !c.ok);
+  if (issues.length) {
+    const names = issues.map((c) => c.check).join(", ");
+    container.append(el("div", "recon-lead",
+      `${recon.length - issues.length} of ${recon.length} checks reconciled \u00b7 ` +
+      `${issues.length} need${issues.length > 1 ? "" : "s"} attention: ${names}`));
+  }
+  recon.forEach((c) => {
     const state = c.unverified ? "warn" : (c.ok ? "ok" : "fail");
     const item = el("div", "recon-item " + state);
     item.append(el("span", "dot"));
     const body = el("div");
     body.append(el("div", "rc-label", c.check));
-    body.append(el("div", "rc-vals", c.unverified
-      ? "could not read the report\u2019s total \u2014 manual review"
-      : `expected ${money0(c.expected)} \u00b7 got ${money0(c.actual)}`));
+    const fmt = (v) => c.kind === "money" ? money(v) : (v === null || v === undefined ? "\u2014" : v);
+    if (c.unverified) {
+      body.append(el("div", "rc-vals",
+        "the report\u2019s own total wasn\u2019t found, so this couldn\u2019t be cross-checked \u2014 verify against the source PDF"));
+    } else if (c.expected === null || c.expected === undefined) {
+      body.append(el("div", "rc-vals",
+        `not stated in the report \u00b7 extracted ${fmt(c.actual)} (nothing to reconcile against)`));
+    } else {
+      body.append(el("div", "rc-vals",
+        `report says ${fmt(c.expected)} \u00b7 extracted ${fmt(c.actual)}`));
+      if (!c.ok) body.append(el("div", "rc-why", reconReason(c)));
+    }
     item.append(body);
     container.append(item);
   });
 }
-const money0 = (v) =>
-  v === null || v === undefined ? "—" :
-  (typeof v === "number" && v > 1000 ? Number(v).toLocaleString("en-IN") : v);
+// Plain-language "why did this check fail" line: the size + direction of the gap
+// and the likely cause, so the checker knows exactly where to look.
+function reconReason(c) {
+  const isMoney = c.kind === "money";
+  const delta = typeof c.delta === "number" ? c.delta
+    : (typeof c.actual === "number" && typeof c.expected === "number"
+        ? c.actual - c.expected : null);
+  if (delta === null || delta === 0) return "";
+  const mag = Math.abs(delta);
+  const dir = delta < 0 ? "short by" : "over by";
+  const amt = isMoney ? money(mag) : String(mag);
+  const pct = isMoney && c.expected
+    ? ` (${(mag / Math.abs(c.expected) * 100).toFixed(2)}%)` : "";
+  let why;
+  if (/account count/i.test(c.check))
+    why = delta < 0 ? "fewer accounts extracted than the report lists \u2014 one may be missing"
+                    : "more accounts extracted than the report lists \u2014 one may be duplicated";
+  else if (/closed/i.test(c.check))
+    why = "zero-balance account count differs from the report \u2014 check balances / statuses";
+  else if (/enquir/i.test(c.check))
+    why = "enquiry count differs from the report\u2019s stated total";
+  else
+    why = "sum of per-account values differs from the report\u2019s total \u2014 review individual amounts";
+  return `${dir} ${amt}${pct} \u2014 ${why}`;
+}
 
 function renderMaker() {
   showView("maker");
