@@ -95,6 +95,65 @@ def _commercial_summary(text: str, n_blocks: int) -> dict:
     return summary
 
 
+# Consumer / individual CIR: each account is an "ACCOUNT DATES AMOUNTS STATUS"
+# block; the page-2 SUMMARY box gives the authoritative totals.
+CONSUMER_MARKER = re.compile(r"ACCOUNT DATES AMOUNTS STATUS", re.I)
+_CONSUMER_TOTALS_RE = re.compile(
+    r"TOTAL:\s*(\d+)\s+HIGH CR/SANC\.?\s*AMT:\s*([\d,]+)\s+CURRENT:\s*([\d,]+)", re.I)
+_CONSUMER_ZERO_RE = re.compile(r"ZERO-BALANCE:\s*(\d+)", re.I)
+_CONSUMER_OVERDUE_RE = re.compile(r"OVERDUE:\s*([\d,]+)", re.I)
+_CONSUMER_ENQ_RE = re.compile(r"All Enquiries\s+(\d+)", re.I)
+
+
+def _chunk_consumer(text: str):
+    """Split a consumer CIR into a front-matter chunk (customer + summary +
+    enquiries) plus batches of whole account blocks. Each account starts with an
+    'ACCOUNT DATES AMOUNTS STATUS' header, so splitting there keeps every account
+    intact and never repeats one. Returns None if the layout is absent."""
+    starts = [m.start() for m in CONSUMER_MARKER.finditer(text)]
+    if len(starts) < 2:
+        return None
+    front = text[:starts[0]]
+    raw = [text[starts[i]:(starts[i + 1] if i + 1 < len(starts) else len(text))]
+           for i in range(len(starts))]
+    n = len(raw)
+    # Consumer accounts are privacy-masked (MEMBER NAME / ACCOUNT NUMBER = "NOT
+    # DISCLOSED"), so two similar tradelines are otherwise indistinguishable and the
+    # model may merge them. Tag each block with a unique index to force one per block.
+    blocks = [f"[[ ACCOUNT {i} of {n} ]]\n{b}" for i, b in enumerate(raw, 1)]
+    chunks = [front]
+    for i in range(0, len(blocks), BLOCKS_PER_CHUNK):
+        batch = blocks[i:i + BLOCKS_PER_CHUNK]
+        hint = (f"[This section contains {len(batch)} account blocks, each marked "
+                f"'[[ ACCOUNT n of {n} ]]'. Return exactly {len(batch)} accounts \u2014 "
+                f"one per marked block, even if two blocks look identical.]\n\n")
+        chunks.append(hint + "\n".join(batch))
+    return chunks
+
+
+def _consumer_summary(text: str, n_blocks: int) -> dict:
+    """Authoritative credit summary for a consumer CIR from the page-2 SUMMARY box
+    (TOTAL accounts / HIGH CR-SANC amount / CURRENT balance / ZERO-BALANCE / OVERDUE).
+    Overrides the LLM so the reconciliation baseline is stable."""
+    summary = {"total_accounts": n_blocks}
+    m = _CONSUMER_TOTALS_RE.search(text)
+    if m:
+        summary["total_sanction"] = int(m.group(2).replace(",", ""))
+        summary["total_outstanding"] = int(m.group(3).replace(",", ""))
+    z = _CONSUMER_ZERO_RE.search(text)
+    if z:
+        summary["closed_accounts"] = int(z.group(1))
+    od = _CONSUMER_OVERDUE_RE.search(text)
+    if od:
+        summary["total_overdue"] = int(od.group(1).replace(",", ""))
+    return summary
+
+
+def _consumer_enquiry_count(text: str):
+    m = _CONSUMER_ENQ_RE.search(text)
+    return int(m.group(1)) if m else None
+
+
 def _merge(outs: list, dedup: bool = True) -> dict:
     """All accounts across chunks, plus the richest customer / enquiries block."""
     accounts, seen = [], set()
@@ -142,27 +201,35 @@ def _extract_chunk(chunk: str, model: dict):
 
 
 def extract(pdf_bytes: bytes, filename: str, model: dict) -> tuple[dict, dict]:
-    # Born-digital PDFs: the embedded text layer is authoritative for values,
-    # so it is what we hand to the LLM (DI OCR can corrupt glyphs like the ₹ sign).
+    t_read = time.perf_counter()
     content = parser.extract_text(pdf_bytes)
-    # Recognise the report type first, then chunk accordingly: a commercial CIR
-    # splits on its per-facility boundary (repeat-free, so no dedup); anything
-    # else uses character chunks (which can repeat, so dedup on merge).
+    pages = parser.page_count(pdf_bytes)
+    read_ms = (time.perf_counter() - t_read) * 1000
     report_type = _detect_report_type(content)
-    commercial = _chunk_commercial(content) if report_type == "commercial" else None
-    chunks, dedup = (commercial, False) if commercial else (_chunk_text(content), True)
-    # Warm one token serially so the concurrent DI + chunk calls reuse it, instead
-    # of each thread invoking the Azure CLI at once (which fails as an auth stampede).
+    has_text = len(content.strip()) >= 200
+    di_ms, di_ran, ocr_used = 0.0, False, False
+    # Born-digital PDFs carry an authoritative text layer, so Document Intelligence
+    # (OCR) is skipped — it adds no accuracy (its OCR mangles the ₹ glyph) and is the
+    # slow step. DI runs only for a scan (no text layer), where OCR is the only input.
+    if not has_text:
+        di = di_read.analyze(pdf_bytes)
+        content, pages, di_ms = di["content"], di["pages"], di["di_ms"]
+        di_ran, ocr_used = True, True
+        report_type = _detect_report_type(content)
+    # Chunk per the report type: commercial and consumer CIRs each split on their
+    # own per-account boundary (repeat-free, so no dedup); an unknown layout falls
+    # back to character chunks (which can repeat, so dedup on merge).
+    structured = (_chunk_commercial(content) if report_type == "commercial"
+                  else _chunk_consumer(content))
+    chunks, dedup = (structured, False) if structured else (_chunk_text(content), True)
+    # Warm one token serially so the parallel calls reuse it instead of each thread
+    # invoking the Azure CLI at once (an auth stampede).
     llm.warm()
-    # DI does not feed the LLM for born-digital PDFs; run DI and every account
-    # chunk concurrently so wall time is ~the slowest single call, not their sum.
-    with ThreadPoolExecutor(max_workers=min(len(chunks) + 1, 9)) as pool:
-        di_future = pool.submit(di_read.analyze, pdf_bytes)
-        t0 = time.perf_counter()
+    t0 = time.perf_counter()
+    with ThreadPoolExecutor(max_workers=max(1, min(len(chunks), 9))) as pool:
         llm_futures = [pool.submit(_extract_chunk, c, model) for c in chunks]
         outs = [r for r in (f.result() for f in llm_futures) if r]
-        llm_wall_ms = (time.perf_counter() - t0) * 1000
-        di = di_future.result()
+    llm_wall_ms = (time.perf_counter() - t0) * 1000
     if not outs:
         raise RuntimeError("extraction produced no results")
     data = _merge(outs, dedup) if len(outs) > 1 else outs[0]["data"]
@@ -171,11 +238,15 @@ def extract(pdf_bytes: bytes, filename: str, model: dict) -> tuple[dict, dict]:
     customer.setdefault("details", {})
     customer.setdefault("addresses", [])
     customer.setdefault("credit_summary", {})
-    if commercial:
-        # Read the grand-total credit summary from the report structure; the LLM's
-        # pick is unstable across the front matter's several competing totals.
-        customer["credit_summary"].update(
-            _commercial_summary(content, len(FACILITY_MARKER.findall(content))))
+    if structured:
+        # Read the credit summary from the report structure; the LLM's pick is
+        # unstable across the front matter's several competing totals.
+        if report_type == "commercial":
+            customer["credit_summary"].update(
+                _commercial_summary(content, len(FACILITY_MARKER.findall(content))))
+        else:
+            customer["credit_summary"].update(
+                _consumer_summary(content, len(CONSUMER_MARKER.findall(content))))
 
     accounts = data.get("accounts") or []
     for acc in accounts:
@@ -184,21 +255,28 @@ def extract(pdf_bytes: bytes, filename: str, model: dict) -> tuple[dict, dict]:
     enquiries = data.get("enquiries") or {}
     enquiries.setdefault("summary", {})
     enquiries.setdefault("detail", [])
+    if structured and report_type != "commercial":
+        enq_total = _consumer_enquiry_count(content)
+        if enq_total is not None:
+            enquiries["summary"]["lifetime"] = enq_total
 
     parsed = {
         "source_file": filename,
-        "page_count": di["pages"],
+        "page_count": pages,
         "text_chars": len(content),
         "customer": customer,
         "accounts": accounts,
         "enquiries": enquiries,
     }
     telemetry = {
-        "di_ms": di["di_ms"],
+        "read_ms": round(read_ms, 1),
+        "di_ms": round(di_ms, 1),
+        "di_ran": di_ran,
+        "ocr_used": ocr_used,
         "llm_ms": round(llm_wall_ms, 1),
         "report_type": report_type,
         "chunks": len(chunks),
-        "pages": di["pages"],
+        "pages": pages,
         "prompt_tokens": sum(o["prompt_tokens"] for o in outs),
         "completion_tokens": sum(o["completion_tokens"] for o in outs),
         "total_tokens": sum(o["total_tokens"] for o in outs),

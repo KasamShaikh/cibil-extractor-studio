@@ -113,6 +113,15 @@ def extract_text(data: bytes) -> str:
     return "\n".join(_pages(data))
 
 
+def page_count(data: bytes) -> int:
+    """Page count straight from the PDF (no OCR / Document Intelligence call)."""
+    pdf = pdfium.PdfDocument(data)
+    try:
+        return len(pdf)
+    finally:
+        pdf.close()
+
+
 # --------------------------------------------------------------------------- #
 # Accounts
 # --------------------------------------------------------------------------- #

@@ -71,22 +71,35 @@ def _processing(parsed: dict, data: dict, read_ms: float, rules_ms: float,
     text_chars = parsed.get("text_chars", 0)
     out_chars = len(json.dumps(data, default=str))
     if mode == "ai" and ai_tel:
+        read_ms2 = ai_tel.get("read_ms", 0.0)
         di_ms, llm_ms = ai_tel["di_ms"], ai_tel["llm_ms"]
+        di_ran = ai_tel.get("di_ran", False)
+        ocr_used = ai_tel.get("ocr_used", False)
         deployment = ai_tel["deployment"]
         region = ai_tel.get("region", "")
+        if ocr_used:
+            source = "Azure AI Document Intelligence (OCR)"
+        elif di_ran:
+            source = "Azure AI Document Intelligence (layout) + pypdfium2 text"
+        else:
+            source = "pypdfium2 text layer (no OCR needed)"
+        engine = (f"Document Intelligence + Foundry ({deployment})" if di_ran
+                  else f"Text layer + Foundry ({deployment})")
         return {
             "mode": "ai",
-            "engine": f"Document Intelligence + Foundry ({deployment})",
-            "engine_detail": "Azure AI Document Intelligence (prebuilt-layout) "
-                             f"→ Azure OpenAI {deployment} "
+            "engine": engine,
+            "engine_detail": f"{source} → Azure OpenAI {deployment} "
                              f"({region}), keyless via managed identity + RBAC.",
             "deployment": deployment,
+            "read_ms": round(read_ms2, 1),
             "di_ms": di_ms,
+            "di_ran": di_ran,
+            "ocr_used": ocr_used,
             "llm_ms": llm_ms,
             "report_type": ai_tel.get("report_type"),
             "chunks": ai_tel.get("chunks"),
             "rules_ms": round(rules_ms, 1),
-            "total_ms": round(di_ms + llm_ms + rules_ms, 1),
+            "total_ms": round(read_ms2 + di_ms + llm_ms + rules_ms, 1),
             "pages": ai_tel["pages"],
             "text_chars": text_chars,
             "token_kind": "real",

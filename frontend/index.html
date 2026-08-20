@@ -147,8 +147,9 @@
           end to end.</p>
         <div class="callout">
           <strong>What runs on every report:</strong> the PDF's embedded text is read with pypdfium2, the
-          report type (individual vs commercial) is recognised, and Azure Document Intelligence provides OCR /
-          layout; the report text plus the extraction instructions go to the Foundry <strong>gpt-5.4-mini</strong>
+          report type (individual vs commercial) is recognised, and the accounts are extracted from the clean
+          text layer; Azure Document Intelligence OCR runs only when a PDF has no text layer (a scan). The report
+          text plus the extraction instructions go to the Foundry <strong>gpt-5.4-mini</strong>
           deployment, which returns structured JSON; a rule engine then normalises, summarises and reconciles it;
           on approval, Excel is generated. Keyless throughout (managed identity + RBAC).
         </div>
@@ -169,9 +170,9 @@
             <td>Born-digital CIBIL PDFs carry an exact text layer, so reading it directly avoids OCR errors (pypdfium2 is permissively licensed, BFSI-safe); the report type decides how the text is chunked for the model.</td>
           </tr>
           <tr>
-            <td><strong>3. OCR &amp; layout</strong><br><span class="muted small">Azure Document Intelligence</span></td>
-            <td>The bytes also go to DI (prebuilt-layout) for OCR and table structure.</td>
-            <td>Makes <em>scanned</em> / photographed reports work; for the born-digital sample the clean pypdfium2 text is authoritative (DI's OCR mis-reads the ₹ glyph).</td>
+            <td><strong>3. OCR &amp; layout</strong><br><span class="muted small">Azure Document Intelligence · scans only</span></td>
+            <td>DI (prebuilt-layout) runs only when a PDF has <em>no</em> text layer (a scan / photo). Every born-digital report — individual or commercial — skips it and uses the clean text layer.</td>
+            <td>Makes <em>scanned</em> reports work while removing the slowest step for born-digital PDFs, where the pypdfium2 text is authoritative (DI's OCR mis-reads the ₹ glyph). Skipping DI roughly halves a big commercial report's time and cuts DI cost on every report.</td>
           </tr>
           <tr>
             <td><strong>4. Extract</strong><br><span class="muted small">Foundry · gpt-5.4-mini</span></td>

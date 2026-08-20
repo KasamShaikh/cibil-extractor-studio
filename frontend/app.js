@@ -82,15 +82,17 @@ function fmtDur(ms) {
 // Maps the backend's real phase timings onto the visible steps.
 function buildStageTimes(p, clientTotalMs) {
   p = p || {};
-  const di = p.di_ms ?? p.read_ms ?? 0;
+  const digit = p.di_ran ? (p.di_ms ?? 0) : (p.read_ms ?? 0);
   const llm = p.llm_ms ?? 0;
   const rules = p.rules_ms ?? 0;
   const total = p.total_ms ?? 0;
   const upload = Math.max(0, clientTotalMs - total); // upload + network + render
   return {
     total: clientTotalMs,
-    steps: [upload, null, di, llm, rules, null],
-    note: (di && llm) ? "Page digitisation and AI extraction run in parallel, so the total is less than their sum." : "",
+    steps: [upload, null, digit, llm, rules, null],
+    note: p.di_ran
+      ? "Document Intelligence and AI extraction run in parallel, so the total is less than their sum."
+      : (p.chunks > 1 ? "Account batches are extracted in parallel, so the total is less than their sum." : ""),
   };
 }
 
@@ -249,7 +251,8 @@ function renderProcessing(container, p) {
   if (p.mode === "ai") {
     if (p.report_type)
       stats.push(["Report type", p.report_type === "commercial" ? "Commercial CIR" : "Individual CIR"]);
-    stats.push(["DI read", (p.di_ms ?? 0) + " ms"]);
+    if (p.di_ran) stats.push([p.ocr_used ? "OCR (DI)" : "DI read", (p.di_ms ?? 0) + " ms"]);
+    else stats.push(["Text read", (p.read_ms ?? 0) + " ms"]);
     stats.push(["LLM", (p.llm_ms ?? 0) + " ms"]);
     if (p.chunks) stats.push(["Chunks", p.chunks]);
   } else {
@@ -560,7 +563,9 @@ const DIAGRAMS = {
   UI->>API: POST /api/extract
   API->>PDF: read text layer
   API->>API: detect report type · chunk per facility
-  API->>DI: analyze (OCR / layout)
+  opt no text layer (scanned PDF)
+    API->>DI: Document Intelligence (OCR / layout)
+  end
   API->>AG: report text + extraction instructions
   AG-->>API: customer + all accounts + enquiries (JSON)
   API->>Rules: apply_rules()
